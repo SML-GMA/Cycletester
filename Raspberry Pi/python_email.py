@@ -1,4 +1,3 @@
-import smtplib
 from email.message import EmailMessage
 
 # 1. Setup your credentials and server details
