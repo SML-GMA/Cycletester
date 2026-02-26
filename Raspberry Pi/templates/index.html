@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Control Dashboard</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+        
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            background: #1a1a1a; 
+            color: #e0e0e0; 
+            margin: 0;
+            padding: 20px;
+        }
+        .container { max-width: 500px; margin: auto; }
+        
+        .card { 
+            background: #2d2d2d; 
+            padding: 20px; 
+            margin: 15px 0; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #444;
+        }
+
+        #conn-status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            background: #3d1a1a;
+            color: #ff6666;
+            margin-bottom: 10px;
+        }
+
+        .status-display {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #888;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .data-item {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .label { display: block; font-size: 0.8em; color: #888; text-transform: uppercase; }
+        .value { font-size: 1.4em; font-weight: bold; color: #fff; }
+
+        .btn-group { display: flex; gap: 10px; justify-content: center; }
+
+        .btn { 
+            flex: 1;
+            padding: 18px; 
+            font-size: 1.2em; 
+            font-weight: bold;
+            cursor: pointer; 
+            border: none; 
+            border-radius: 8px; 
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+        }
+
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .start { background: #28a745; color: white; box-shadow: 0 4px 0 #1e7e34; }
+        .start:hover { background: #218838; }
+
+        .stop { background: #dc3545; color: white; box-shadow: 0 4px 0 #a71d2a; }
+        .stop:hover { background: #c82333; }
+        
+        .reset { background: #ffc107; color: white; box-shadow: 0 4px 0 #cf9c11; }
+        .reset:hover { background: #cf9c11; }
+
+        .estop-active { color: #ffc107 !important; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="conn-status">Disconnected</div>
+
+        <div class="card">
+            <div id="statusText" class="status-display">IDLE</div>
+            
+            <div class="data-grid">
+                <div class="data-item">
+                    <span class="label">Speed</span>
+                    <span id="speed" class="value">0.0</span>
+                </div>
+                <div class="data-item">
+                    <span class="label">Distance</span>
+                    <span id="dist" class="value">0</span>
+                </div>
+                <div class="data-item">
+                    <span class="label">Counter</span>
+                    <span id="counter" class="value">0</span>
+                </div>
+                <div class="data-item">
+                    <span class="label">Door</span>
+                    <span id="door" class="value">Closed</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="btn-group">
+                <button id="startBtn" class="btn start" onclick="sendCmd('start')">Start</button>
+                <button id="stopBtn" class="btn stop" onclick="sendCmd('stop')">Stop</button>
+                <button id="resetBtn" class="btn reset" onclick="sendCmd('reset')">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Socket
+        const socket = io();
+
+        // Safety: Only allow commands if socket is connected
+        window.sendCmd = function(type) {
+            if (socket && socket.connected) {
+                console.log("Web Command Sent:", type);
+                socket.emit('web_cmd', type);
+            } else {
+                console.warn("Cannot send command: Socket disconnected.");
+            }
+        };
+
+        // Socket Event: Connect
+        socket.on('connect', () => {
+            const indicator = document.getElementById('conn-status');
+            indicator.innerText = "✅ System Online";
+            indicator.style.background = "#1a3d21";
+            indicator.style.color = "#66ff99";
+            console.log("WebSocket connected successfully.");
+        });
+
+        // Socket Event: Disconnect
+        socket.on('disconnect', () => {
+            const indicator = document.getElementById('conn-status');
+            indicator.innerText = "❌ Connection Lost";
+            indicator.style.background = "#3d1a1a";
+            indicator.style.color = "#ff6666";
+        });
+
+        // Socket Event: Data Update
+        socket.on('update', (state) => {
+            // Update Text Values
+            document.getElementById('speed').innerText = (state.speed || 0).toFixed(1);
+            document.getElementById('dist').innerText = state.dist || 0;
+            document.getElementById('counter').innerText = state.counter || 0;
+            document.getElementById('door').innerText = state.door ? "Open" : "Closed";
+            document.getElementById('door').style.color = state.door ? "#dc3545" : "#28a745";
+
+            // Update Status Display
+            const statusEl = document.getElementById('statusText');
+            if (state.estop) {
+                statusEl.innerText = "EMERGENCY STOP";
+                statusEl.className = "status-display estop-active";
+            } else if (state.stalled) {
+                statusEl.innerText = "STALLED";
+                statusEl.className = "status-display estop-active";
+            } else if (state.running) {
+                statusEl.innerText = "RUNNING";
+                statusEl.style.color = "#28a745";
+                statusEl.classList.remove("estop-active");
+            } else {
+                statusEl.innerText = "STANDBY";
+                statusEl.style.color = "#888";
+                statusEl.classList.remove("estop-active");
+            }
+
+            // Button Interlock: Disable Start if door open or estop active
+            document.getElementById('startBtn').disabled = (state.door || state.estop);
+            // Highlight Reset button if stalled
+            const resetBtn = document.getElementById('resetBtn');
+            if (state.stalled) {
+                resetBtn.style.animation = "blink 1s infinite";
+            } else {
+                resetBtn.style.animation = "none";
+            }
+        });
+    </script>
+</body>
+</html>
