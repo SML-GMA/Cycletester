@@ -57,7 +57,7 @@ msg_stalled = """\
     <body>
         <h1 style="color: Red;">CYCLETESTER STALLED!</h1>
         <h2>Please check machine and restart.</h2>
-        <h3>Current cycle count: <b>{}</b></h3>
+        <h3>Current cycle count: <b>{count}</b></h3>
         <p>Visit me at <a href>10.181.106.124</a></p>
     </body>
 </html>
@@ -69,7 +69,7 @@ msg_paused = """\
     <body>
         <h1 style="color: Orange;">CYCLETESTER PAUSED!</h1>
         <h2>Please replace pins and continue test.</h2>
-        <h3>Current cycle count: <b>""" + str(state['counter']) + """</b></h3>
+        <h3>Current cycle count: <b>{count}</b></h3>
         <p>Visit me at <a href>10.181.106.124</a></p>
     </body>
 </html>
@@ -80,7 +80,7 @@ msg_finished = """\
     <body>
         <h1 style="color: Limegreen;">CYCLETESTER FINISHED!</h1>
         <h2>Test completed.</h2>
-        <h3>Current cycle count: <b>""" + str(state['counter']) + """</b></h3>
+        <h3>Current cycle count: <b>{count}</b></h3>
         <p>Visit me at <a href>10.181.106.124</a></p>
     </body>
 </html>
@@ -102,6 +102,20 @@ except Exception as e:
     print(f"❌ Serial Error: {e}")
     ser_con = None
     ser_nex = None
+
+def send_status_email(template_index):
+    """Sends a formatted email based on the current state counter."""
+    try:
+        msg = EmailMessage()
+        
+        msg.set_content(messages[template_index].format(count=state['counter']), subtype='html')
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+        print(f"📧 Email Notification Sent (Type {template_index})")
+    except Exception as e:
+        print(f"❌ Email Failed: {e}")
 
 def send_con(cmd, val):
     if ser_con:
@@ -131,6 +145,15 @@ def process_controllino_line(line):
             if state['L'] and not state['prevL']: # Cycle sensor
                 state['counter'] += 1
                 send_nex(f"n0.val={state['counter']}")
+                
+                # Check for specific milestones: 100 or 2500
+                if state['counter'] in [100, 2500]:
+                    print(f"⏸️ Milestone {state['counter']} reached. Triggering Pause.")
+                    state['running'] = False
+                    send_con('S', 0)
+                    send_con('M', 0)
+                    send_nex("t0.txt=\"PAUSED: PIN REPLACE\"")
+                    send_status_email(1) # Send msg_paused
             state['prevL'] = state['L']
         except Exception as e:
             print(f"Parsing Error: {e} | Line: {line}")
@@ -232,14 +255,7 @@ def background_loop():
                 send_con('S', 0)      # Stop Motor
                 send_con('M', 0)      # Magnet OFF (Safety)
                 send_nex("t0.txt=\"STALL ERROR\"") # Assuming t0 is a status text on Nextion
-                msg.set_content(messages[0].format(state['counter']), subtype='html')
-                try:
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-                        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-                        smtp.send_message(msg)
-                    print("Email sent successfully!")
-                except Exception as e:
-                    print(f"Error: {e}")
+                send_status_email(0)
                 continue # Skip the rest of the movement logic
             # -----------------------------
             
