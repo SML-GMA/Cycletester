@@ -1,3 +1,4 @@
+import smtplib
 from email.message import EmailMessage
 
 # 1. Setup your credentials and server details
@@ -10,7 +11,7 @@ msg['Subject'] = "Cycletester status:"
 msg['From'] = EMAIL_ADDRESS
 msg['To'] = "engineering@smarterliving.nl"
 
-counter = 3412
+counter = 1234
 
 msg_stalled = """\
 <!DOCTYPE html>

@@ -3,6 +3,18 @@ import time
 import threading
 from flask import Flask, render_template
 from flask_socketio import SocketIO
+import smtplib
+from email.message import EmailMessage
+
+# 1. Setup your credentials and server details
+EMAIL_ADDRESS = "guus.van.marle@smarterliving.nl"
+EMAIL_PASSWORD = "nrbt nbaw qvrl ehnt"  # Do not use your regular password!
+
+# 2. Create the email container
+msg = EmailMessage()
+msg['Subject'] = "Cycletester status:"
+msg['From'] = EMAIL_ADDRESS
+msg['To'] = "engineering@smarterliving.nl"
 
 # --- Configuration ---
 PORT_CON = '/dev/ttyACM0'
@@ -38,6 +50,43 @@ state = {
     "stalled": False,
     "last_move_time": 0
 }
+
+msg_stalled = """\
+<!DOCTYPE html>
+<html>
+    <body>
+        <h1 style="color: Red;">CYCLETESTER STALLED!</h1>
+        <h2>Please check machine and restart.</h2>
+        <h3>Current cycle count: <b>{}</b></h3>
+        <p>Visit me at <a href>10.181.106.124</a></p>
+    </body>
+</html>
+"""
+
+msg_paused = """\
+<!DOCTYPE html>
+<html>
+    <body>
+        <h1 style="color: Orange;">CYCLETESTER PAUSED!</h1>
+        <h2>Please replace pins and continue test.</h2>
+        <h3>Current cycle count: <b>""" + str(state['counter']) + """</b></h3>
+        <p>Visit me at <a href>10.181.106.124</a></p>
+    </body>
+</html>
+"""
+msg_finished = """\
+<!DOCTYPE html>
+<html>
+    <body>
+        <h1 style="color: Limegreen;">CYCLETESTER FINISHED!</h1>
+        <h2>Test completed.</h2>
+        <h3>Current cycle count: <b>""" + str(state['counter']) + """</b></h3>
+        <p>Visit me at <a href>10.181.106.124</a></p>
+    </body>
+</html>
+"""
+
+messages = [msg_stalled, msg_paused, msg_finished]
 
 # --- Web Setup ---
 app = Flask(__name__)
@@ -183,8 +232,18 @@ def background_loop():
                 send_con('S', 0)      # Stop Motor
                 send_con('M', 0)      # Magnet OFF (Safety)
                 send_nex("t0.txt=\"STALL ERROR\"") # Assuming t0 is a status text on Nextion
+                msg.set_content(messages[0].format(state['counter']), subtype='html')
+                try:
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                        smtp.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+                        smtp.send_message(msg)
+                    print("Email sent successfully!")
+                except Exception as e:
+                    print(f"Error: {e}")
                 continue # Skip the rest of the movement logic
             # -----------------------------
+            
+            
             
             now = time.time()
             # Calculate Speed (Delta Dist / 50ms)
